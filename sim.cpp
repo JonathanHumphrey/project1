@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <string>
+#include <algorithm>
 
 #include "header.h"
 
@@ -76,7 +77,7 @@ void generate_report()
     float totalThroughput = (float)MAX_PROCESSES / completeTime;
     float cpuUtil = busyTime / completeTime;
     float avgWait = waitingTime / (float)MAX_PROCESSES;
-    float avgQuantLength = 1.0 / (float)lambda * avgWait;
+    float avgReadyQLength = readyQCount / (float)MAX_PROCESSES;
     string _scheduler;
 
     switch (scheduler)
@@ -131,14 +132,14 @@ void generate_report()
              << setw(width) << avgTurnAround
              << setw(width) << totalThroughput
              << setw(width) << cpuUtil
-             << setw(width) << avgQuantLength << endl;
+             << setw(width) << avgReadyQLength << endl;
 
         xcel << _scheduler << ","
              << lambda << ","
              << avgTurnAround << ","
              << totalThroughput << ","
              << cpuUtil << ","
-             << avgQuantLength << ","
+             << avgReadyQLength << ","
              << endl;
 
         data.close();
@@ -185,6 +186,10 @@ int run_sim()
     case 2:
         cout << "SRTF\n";
         SRTF();
+        break;
+    case 3:
+        cout << "HRRN\n";
+        HRRN();
         break;
     }
 
@@ -240,7 +245,7 @@ void scheduleArrival()
 
     eventQ.push_back(*arrival);
 
-    cout << "Arrival Scheduled for: " << eventQ.back().pLink->pid << endl;
+    // cout << "Arrival Scheduled for: " << eventQ.back().pLink->pid << endl;
 }
 void arrival()
 {
@@ -251,12 +256,11 @@ void arrival()
     readyQ.push_back(ready);
     eventQ.pop_front();
 
-    cout << "Arrival For: " << readyQ.back().pLink->pid << endl;
+    // cout << "Arrival For: " << readyQ.back().pLink->pid << endl;
 }
 
 void scheduleDispatch()
 {
-    cout << "trying to schedule dispatch" << endl;
     event *dispatch = new event;
     process *nextProc;
     bool exists = false;
@@ -271,20 +275,33 @@ void scheduleDispatch()
     {
         if (cpu->clock > readyQ.front().pLink->arrival)
         {
+            // Checking to see what process has the least amount of time left
             for (int i = 0; i < readyQ.size(); i++)
             {
                 shortest = readyQ.front().pLink->remaining;
-
+                cout << shortest << endl;
                 if (readyQ[i].pLink->remaining < shortest)
                 {
                     nextProc = readyQ[i].pLink;
+                    cout << "Shortest Process: " << nextProc->pid << " with time: " << nextProc->remaining << endl
+                         << endl;
                 }
             }
-            cout << shortest;
         }
         else
         {
             nextProc = readyQ.front().pLink;
+        }
+    }
+    else if (scheduler = 3)
+    {
+        int nextProcID = getHRRNProcess();
+        for (int i = 0; i < readyQ.size(); i++)
+        {
+            if (readyQ[i].pLink->pid == nextProcID)
+            {
+                nextProc = readyQ[i].pLink;
+            }
         }
     }
 
@@ -311,24 +328,26 @@ void scheduleDispatch()
     {
 
         eventQ.push_back(*dispatch);
-        cout << "Dispatch Scheduled for: " << dispatch->pLink->pid << endl;
+        // cout << "Dispatch Scheduled for: " << dispatch->pLink->pid << endl;
     }
 }
 
 void dispatch()
 {
-    cout << "Dispatching: " << eventQ.front().pLink->pid << endl;
+    // cout << "Dispatching: " << eventQ.front().pLink->pid << endl;
 
     cpu->pLinkCpu = eventQ.front().pLink;
 
     // SRTF = 2 RR = 4
     if (scheduler == 2 || scheduler == 4)
     {
-        if (readyQ.front().pLink->arrival != eventQ.front().pLink->arrival)
+        readyProc second = readyQ[1];
+        readyProc first = readyQ[0];
+        if (first.pLink->arrival != eventQ.front().pLink->arrival)
         {
             for (int i = 0; i < readyQ.size(); i++)
             {
-                if (readyQ[i + 1].pLink->arrival == eventQ.front().pLink->arrival)
+                if (second.pLink->arrival == eventQ.front().pLink->arrival)
                 {
                     readyQ[i + 1] = readyQ[i + 2];
                     readyQ[i + 1] = readyQ.front();
@@ -338,6 +357,7 @@ void dispatch()
             }
         }
     }
+
     readyQ.pop_front();
     eventQ.pop_front();
 
@@ -360,7 +380,6 @@ void dispatch()
 
 void scheduleDeparture()
 {
-
     bool exists = false;
 
     event *departure = new event;
@@ -393,19 +412,18 @@ void scheduleDeparture()
             exists = true;
         }
     }
-    if (!exists && eventQ.back().pLink->remaining == 0)
+    if (!exists)
     {
 
         eventQ.push_back(*departure);
-        cout << "Departure Scheduled for: " << eventQ.back().pLink->pid << " with: " << eventQ.back().pLink->remaining << endl;
     }
 }
 
 void departure()
 {
-    cout << "Departure of: " << eventQ.front().pLink->pid << endl;
 
     cpu->clock = eventQ.front().time;
+
     cpu->pLinkCpu->finish = cpu->clock;
     cpu->pLinkCpu->remaining = 0.0;
 
@@ -425,13 +443,22 @@ void departure()
 
 bool willPreempt()
 {
+    cout << "preempt bool" << endl;
     float cpuFinish = expectedEndTime();
     float cpuRemaining = cpuFinish - eventQ.front().time;
 
-    return (eventQ.front().time < cpuFinish) && (eventQ.front().pLink->remaining < cpuRemaining);
+    if (eventQ.front().time < cpuFinish && eventQ.front().pLink->remaining < cpuRemaining)
+    {
+        return true;
+    }
+    else
+    {
+        return false;
+    }
 }
 void schedulePreemption()
 {
+    cout << "testing" << endl;
     bool exists = false;
 
     event *preempt = new event;
@@ -441,26 +468,25 @@ void schedulePreemption()
     preempt->pLink = eventQ.front().pLink;
 
     // eventQ.pop_front();
-    for (int i = 0; i < eventQ.size(); i++)
-    {
-        if (preempt->pLink->pid == eventQ[i].pLink->pid)
-        {
-            exists = true;
-        }
-    }
     if (!exists)
     {
         eventQ.push_back(*preempt);
         cout << "Preemption Scheduled for: " << eventQ.back().pLink->pid << endl;
+        for (int i = 0; i < eventQ.size(); i++)
+        {
+            cout << eventQ[i].type << ", ";
+        }
+        cout << endl;
     }
 }
 void preemption()
 {
-
+    cout << "preempting process" << endl;
     bool exists = false;
 
     process *preemptProc = cpu->pLinkCpu;
     cpu->pLinkCpu->remaining = expectedEndTime() - eventQ.front().time;
+
     cpu->pLinkCpu = eventQ.front().pLink;
     cpu->clock = eventQ.front().time;
 
@@ -479,8 +505,8 @@ void preemption()
     pArrival->next = nullptr;
     pArrival->pLink = preemptProc;
 
-    eventQ.pop_front();
-    for (int i = 0; i < eventQ.size(); i++)
+    // eventQ.pop_front();
+    /* for (int i = 0; i < eventQ.size(); i++)
     {
         if (pArrival->pLink->pid == eventQ[i].pLink->pid)
         {
@@ -490,8 +516,8 @@ void preemption()
     if (!exists)
     {
         eventQ.push_back(*pArrival);
-    }
-    // eventQ.push_back(*pArrival);
+    } */
+    eventQ.push_back(*pArrival);
 }
 float expectedEndTime()
 {
@@ -511,8 +537,9 @@ void FCFS()
     int arrivals = 0;
     int departures = 0;
     int dispatches = 0;
-    while (departures < 100)
+    while (departures < MAX_PROCESSES)
     {
+
         if (!cpu->busy)
         {
             scheduleArrival();
@@ -544,23 +571,29 @@ void FCFS()
         }
     }
 }
+
+// Shortest Remaining Time First
+// NOT WORKTING: Preemption event seems to break the queue, or it's not scheduling enough things?
 void SRTF()
 {
     int arrivals = 0;
     int departures = 0;
     int dispatches = 0;
-    while (departures < 15)
+    /* while (departures < 15)
     {
-    }
-    for (int i = 0; i < 15; i++)
+    } */
+    // for (int i = 0; i < 100; i++)
+    while (departures < MAX_PROCESSES)
     {
         if (arrivals < (MAX_PROCESSES * 1.20))
         {
             scheduleArrival();
             arrivals++;
         }
+
         if (!cpu->busy)
         {
+            // scheduleArrival();
             if (!readyQ.empty())
             {
                 scheduleDispatch();
@@ -577,6 +610,7 @@ void SRTF()
                 }
                 else if (willPreempt())
                 {
+                    cout << eventQ.front().pLink->pid << " will preempt" << endl;
                     schedulePreemption();
                 }
             }
@@ -585,6 +619,7 @@ void SRTF()
         {
         case 1:
             arrival();
+            // arrivals++;
             break;
         case 2:
             dispatch();
@@ -597,7 +632,77 @@ void SRTF()
         case 4:
             preemption();
         default:
-            cerr << "failed event\n";
+            cerr << "failed event: " + eventQ.front().type << endl;
+        }
+    }
+}
+
+int getHRRNProcess()
+{
+
+    process *hrrProc = readyQ.front().pLink;
+
+    float arrival = hrrProc->arrival;
+    float remaining = hrrProc->remaining;
+
+    float HRR = getResponseRatio(arrival, remaining);
+    for (int i = 0; i < readyQ.size(); i++)
+    {
+        if (getResponseRatio(arrival, remaining) > HRR)
+        {
+            HRR = getResponseRatio(arrival, remaining);
+            hrrProc = readyQ[i].pLink;
+            cout << hrrProc->pid << ": " << HRR << endl;
+        }
+    }
+
+    return hrrProc->pid;
+}
+float getResponseRatio(float arrival, float burst)
+{
+    float HRR = ((cpu->clock - arrival) + burst) / burst;
+    // cout << "HRR: " << HRR << endl;
+    return HRR;
+}
+
+void HRRN()
+{
+    {
+        int arrivals = 0;
+        int departures = 0;
+        int dispatches = 0;
+        while (departures < MAX_PROCESSES)
+        {
+
+            if (!cpu->busy)
+            {
+                scheduleArrival();
+                if (!readyQ.empty())
+                {
+                    scheduleDispatch();
+                }
+            }
+            else
+            {
+                scheduleDeparture();
+            }
+            switch (eventQ.front().type)
+            {
+            case 1:
+                arrival();
+                arrivals++;
+                break;
+            case 2:
+                dispatch();
+                dispatches++;
+                break;
+            case 3:
+                departure();
+                departures++;
+                break;
+            default:
+                cerr << "failed event";
+            }
         }
     }
 }

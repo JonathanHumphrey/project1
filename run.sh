@@ -10,3 +10,8 @@ for((i = 10; i < 31; i++)); do
     ./sim 2 $i 0.04 0.01
     cp sim.data ./data/2-$i-004.data
 done
+
+for((i = 10; i < 31; i++)); do
+    ./sim 3 $i 0.04 0.01
+    cp sim.data ./data/2-$i-004.data
+done

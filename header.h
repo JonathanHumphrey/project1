@@ -25,6 +25,7 @@ float busyTime;
 float quantum;
 float qClock;
 float avgServeTime = 0.0;
+float readyQCount;
 
 // Structs
 struct process
@@ -73,12 +74,16 @@ void init();
 void generate_report();
 void FCFS();
 void SRTF();
+void HRRN();
 
 int run_sim();
 
 float urand();
 float genexp(float);
 float expectedEndTime();
+float getResponseRatio(float, float);
+
+int getHRRNProcess();
 
 #endif
 
